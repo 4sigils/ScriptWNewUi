@@ -1,29 +1,24 @@
 --[[
     AutoFarm Hub
-    Uses Simpliness UI Library
+    Uses GalaxLib v2 UI Library
 ]]
-
 local _libOk, _libErr = pcall(function()
-    Simpliness = loadstring(game:HttpGet("https://raw.githubusercontent.com/4sigils/blahblah/refs/heads/main/thosewhoknow.lua"))() or Simpliness
+    GalaxLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/4sigils/blahblah/refs/heads/main/thosewhoknow.lua"))() or GalaxLib
 end)
-if not _libOk or not Simpliness then
-    error("[AutoFarmHub] Failed to load Simpliness from GitHub.\nError: " .. tostring(_libErr))
+if not _libOk or not GalaxLib then
+    error("[AutoFarmHub] Failed to load GalaxLib_v2 from GitHub. Make sure the file is uploaded to the repo.\nError: " .. tostring(_libErr))
 end
-
-local Win = Simpliness:CreateWindow({
-    Title   = "Hello, " .. game:GetService("Players").LocalPlayer.Name,
-    Width   = 580,
-    Height  = 480,
+local Win = GalaxLib:CreateWindow({
+    Title = "Hello, " .. game:GetService("Players").LocalPlayer.Name,
+    Size = Vector2.new(580, 480),
     MenuKey = 0x70 -- F1
 })
-
 -- ─────────────────────────────────────────────
 -- Shared Services / Utilities
 -- ─────────────────────────────────────────────
-local Players   = game:GetService("Players")
+local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local player    = Players.LocalPlayer
-
+local player = Players.LocalPlayer
 local liveFolder = Workspace:WaitForChild("Live", 10)
 if not liveFolder then
     if game.PlaceId == 74747090658891 then
@@ -34,58 +29,61 @@ if not liveFolder then
         return
     end
 end
-
 local playerNames = {}
 for _, p in Players:GetPlayers() do playerNames[p.Name] = true end
-Players.PlayerAdded:Connect(function(p)    playerNames[p.Name] = true end)
-Players.PlayerRemoving:Connect(function(p) playerNames[p.Name] = nil  end)
-
-_G.AutoFarm_Enabled      = false
-_G.AutoMob_Enabled       = false
-_G.AutoRaid_Enabled      = false
-_G.VampireVoid_Enabled   = false
+Players.PlayerAdded:Connect(function(p) playerNames[p.Name] = true end)
+Players.PlayerRemoving:Connect(function(p) playerNames[p.Name] = nil end)
 
 local TAB_KEY = 0x09
-
 local function getHRP()
     local char = player.Character
     if not char then return nil end
     return char:FindFirstChild("HumanoidRootPart")
 end
-
 local function getHumanoid()
     local char = player.Character
     if not char then return nil end
     return char:FindFirstChildWhichIsA("Humanoid")
 end
-
 local function getSummonedStand()
     local playerFolder = liveFolder:FindFirstChild(player.Name)
     if not playerFolder then return nil end
-    local ok, val = pcall(function() return playerFolder:GetAttribute("SummonedStand") end)
+    local ok, val = pcall(function()
+        return playerFolder:GetAttribute("SummonedStand")
+    end)
     if ok then return val end
     return nil
 end
-
 local function pressTabUntilStandSummoned()
+    print("Pressing tab until stand is summoned...")
     while true do
         local stand = getSummonedStand()
-        if stand and stand ~= "" then break end
-        pcall(keypress,   TAB_KEY); task.wait(0.1)
-        pcall(keyrelease, TAB_KEY); task.wait(0.3)
+        if stand and stand ~= "" then
+            print("Stand summoned: " .. tostring(stand))
+            break
+        end
+        pcall(keypress, TAB_KEY)
+        task.wait(0.1)
+        pcall(keyrelease, TAB_KEY)
+        task.wait(0.3)
     end
 end
-
 local function teleportToSpawn(SPAWN_POS)
     for i = 1, 10 do
         local hrp = getHRP()
-        if hrp then pcall(function() hrp.Position = SPAWN_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+        if hrp then
+            pcall(function()
+                hrp.Position = SPAWN_POS
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            end)
+            print("Teleported to spawn (attempt " .. i .. ")")
+        end
         task.wait(0.2)
     end
     pressTabUntilStandSummoned()
 end
-
 local function waitForRespawn(SPAWN_POS)
+    print("Waiting for respawn...")
     task.wait(1)
     while true do
         local char = player.Character
@@ -97,11 +95,12 @@ local function waitForRespawn(SPAWN_POS)
         task.wait(0.2)
     end
     task.wait(1)
+    print("Respawned, teleporting...")
     teleportToSpawn(SPAWN_POS)
 end
-
 local function makeNPCLoop(filterFn, SPAWN_POS)
     local function waitForNPC()
+        print("Looking for NPCs...")
         while true do
             local npcs = {}
             for _, obj in liveFolder:GetChildren() do
@@ -116,7 +115,12 @@ local function makeNPCLoop(filterFn, SPAWN_POS)
             end
             if #npcs > 0 then return npcs[math.random(1, #npcs)] end
             local hrp = getHRP()
-            if hrp then pcall(function() hrp.Position = SPAWN_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+            if hrp then
+                pcall(function()
+                    hrp.Position = SPAWN_POS
+                    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                end)
+            end
             task.wait(1)
         end
     end
@@ -137,476 +141,690 @@ local function makeNPCLoop(filterFn, SPAWN_POS)
     end
     return waitForNPC, pickNPC
 end
-
 -- ─────────────────────────────────────────────
--- Farm State
+-- Farm State Handles
 -- ─────────────────────────────────────────────
 local farmThreads = {}
 local function stopFarm(name)
-    if farmThreads[name] then farmThreads[name].alive = false; farmThreads[name] = nil end
+    if farmThreads[name] then
+        farmThreads[name].alive = false
+        farmThreads[name] = nil
+        print("[" .. name .. "] Stopped.")
+    end
 end
-local function startFarm(name, fn)
-    if farmThreads[name] then return end
-    local state = { alive = true }; farmThreads[name] = state
-    task.spawn(function() fn(state) end)
+local function startFarm(name, startFn)
+    if farmThreads[name] then
+        warn("[" .. name .. "] Already running.")
+        return
+    end
+    local state = { alive = true }
+    farmThreads[name] = state
+    print("[" .. name .. "] Started.")
+    task.spawn(function() startFn(state) end)
 end
-
+-- ─────────────────────────────────────────────
+-- Generic movement loop
+-- ─────────────────────────────────────────────
 local function runMovementLoop(state, waitForNPC, pickNPC, SPAWN_POS)
     pressTabUntilStandSummoned()
-    local target = waitForNPC()
-    local lastPos, bDirX, bDirZ = nil, 0, 0
-
+    local randomNPC = waitForNPC()
+    print("Stuck behind NPC: " .. randomNPC.Name)
+    local lastNPCPos = nil
+    local behindDirX = 0
+    local behindDirZ = 0
+    local BEHIND_OFFSET = 0
     while state.alive do
         local myHum = getHumanoid()
         if not myHum or myHum.Health <= 0 then
-            waitForRespawn(SPAWN_POS); target = waitForNPC(); lastPos = nil
+            waitForRespawn(SPAWN_POS)
+            randomNPC = waitForNPC()
+            print("New target after respawn: " .. randomNPC.Name)
+            lastNPCPos = nil; behindDirX = 0; behindDirZ = 1
             continue
         end
-        local hrp = getHRP(); if not hrp then task.wait(0.1); continue end
-        local hum    = target and target:FindFirstChildWhichIsA("Humanoid")
-        local npcHRP = target and target:FindFirstChild("HumanoidRootPart")
+        local hrp = getHRP()
+        if not hrp then task.wait(0.1) continue end
+        local hum = randomNPC and randomNPC:FindFirstChildWhichIsA("Humanoid")
+        local npcHRP = randomNPC and randomNPC:FindFirstChild("HumanoidRootPart")
         if not npcHRP or not hum or hum.Health <= 0 then
-            target = pickNPC() or waitForNPC(); lastPos = nil; continue
+            warn("NPC died, finding new target...")
+            local newNPC = pickNPC()
+            randomNPC = newNPC or waitForNPC()
+            lastNPCPos = nil; behindDirX = 0; behindDirZ = 1
+            print("New target: " .. randomNPC.Name)
+            continue
         end
-        local npos = npcHRP.Position
-        if lastPos then
-            local dx,dz = npos.X-lastPos.X, npos.Z-lastPos.Z
-            local mag = math.sqrt(dx*dx+dz*dz)
-            if mag > 0.01 then bDirX=-(dx/mag); bDirZ=-(dz/mag) end
+        local npcPos = npcHRP.Position
+        if lastNPCPos then
+            local dx = npcPos.X - lastNPCPos.X
+            local dz = npcPos.Z - lastNPCPos.Z
+            local mag = math.sqrt(dx*dx + dz*dz)
+            if mag > 0.01 then
+                behindDirX = -(dx / mag)
+                behindDirZ = -(dz / mag)
+            end
         end
-        lastPos = npos
-        pcall(function() hrp.Position = Vector3.new(npos.X+bDirX*0,npos.Y,npos.Z+bDirZ*0); hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end)
+        lastNPCPos = npcPos
+        local behindPos = Vector3.new(
+            npcPos.X + behindDirX * BEHIND_OFFSET,
+            npcPos.Y,
+            npcPos.Z + behindDirZ * BEHIND_OFFSET
+        )
+        pcall(function()
+            hrp.Position = behindPos
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end)
         task.wait()
     end
 end
-
 -- ─────────────────────────────────────────────
 -- Farm Definitions
 -- ─────────────────────────────────────────────
 local ALLOWED_PLACE_ID = 14890802310
-local function isCorrectGame() return game.PlaceId == ALLOWED_PLACE_ID end
-
+local function isCorrectGame()
+    return game.PlaceId == ALLOWED_PLACE_ID
+end
 local function startAnubis(state)
-    if not isCorrectGame() then warn("[Anubis] Wrong game"); return end
-    local SPAWN = Vector3.new(840, 886, -625)
-    local waitForNPC, pickNPC = makeNPCLoop(function(o) return o.Name:sub(1,15)==".Prison Escapee" end, SPAWN)
-    task.spawn(function() while state.alive do pcall(keypress,0x52);task.wait(0.1);pcall(keyrelease,0x52);task.wait(0.1) end end)
-    task.spawn(function() while state.alive do pcall(keypress,0x58);task.wait(0.1);pcall(keyrelease,0x58);task.wait(15)  end end)
-    runMovementLoop(state, waitForNPC, pickNPC, SPAWN)
+    if not isCorrectGame() then warn("[Anubis] Wrong game. PlaceId must be " .. ALLOWED_PLACE_ID); return end
+    local SPAWN_POS = Vector3.new(840, 886, -625)
+    local R_KEY = 0x52; local X_KEY = 0x58
+    local waitForNPC, pickNPC = makeNPCLoop(function(obj)
+        return obj.Name:sub(1, 15) == ".Prison Escapee"
+    end, SPAWN_POS)
+    task.spawn(function()
+        while state.alive do pcall(keypress, R_KEY); task.wait(0.1); pcall(keyrelease, R_KEY); task.wait(0.1) end
+    end)
+    task.spawn(function()
+        while state.alive do pcall(keypress, X_KEY); task.wait(0.1); pcall(keyrelease, X_KEY); task.wait(15) end
+    end)
+    runMovementLoop(state, waitForNPC, pickNPC, SPAWN_POS)
 end
-
 local function startBizarre(state)
-    if not isCorrectGame() then warn("[Bizarre] Wrong game"); return end
-    local SPAWN = Vector3.new(840, 886, -625)
-    local waitForNPC, pickNPC = makeNPCLoop(function(o) return o.Name:find(".Prison Escapee",1,true)~=nil end, SPAWN)
-    task.spawn(function() while state.alive do pcall(keypress,0x52);task.wait(0.1);pcall(keyrelease,0x52);task.wait(0.1) end end)
-    runMovementLoop(state, waitForNPC, pickNPC, SPAWN)
+    if not isCorrectGame() then warn("[Bizarre] Wrong game. PlaceId must be " .. ALLOWED_PLACE_ID); return end
+    local SPAWN_POS = Vector3.new(840, 886, -625)
+    local R_KEY = 0x52
+    local waitForNPC, pickNPC = makeNPCLoop(function(obj)
+        return obj.Name:find(".Prison Escapee", 1, true) ~= nil
+    end, SPAWN_POS)
+    task.spawn(function()
+        while state.alive do pcall(keypress, R_KEY); task.wait(0.1); pcall(keyrelease, R_KEY); task.wait(0.1) end
+    end)
+    runMovementLoop(state, waitForNPC, pickNPC, SPAWN_POS)
 end
-
 local function startMIH(state)
-    if not isCorrectGame() then warn("[MIH] Wrong game"); return end
-    local SPAWN = Vector3.new(1483, 875, -568)
-    local waitForNPC, pickNPC = makeNPCLoop(function(o) return o.Name:sub(1,11)==".Delinquent" end, SPAWN)
-    task.spawn(function() while state.alive do pcall(keypress,0x5A);task.wait(0.1);pcall(keyrelease,0x5A);task.wait(1) end end)
-    runMovementLoop(state, waitForNPC, pickNPC, SPAWN)
+    if not isCorrectGame() then warn("[MIH] Wrong game. PlaceId must be " .. ALLOWED_PLACE_ID); return end
+    local SPAWN_POS = Vector3.new(1483, 875, -568)
+    local Z_KEY = 0x5A
+    local waitForNPC, pickNPC = makeNPCLoop(function(obj)
+        return obj.Name:sub(1, 11) == ".Delinquent"
+    end, SPAWN_POS)
+    task.spawn(function()
+        while state.alive do pcall(keypress, Z_KEY); task.wait(0.1); pcall(keyrelease, Z_KEY); task.wait(1) end
+    end)
+    runMovementLoop(state, waitForNPC, pickNPC, SPAWN_POS)
 end
-
 -- ─────────────────────────────────────────────
--- Config
+-- Config Save / Load
 -- ─────────────────────────────────────────────
-local HttpService   = game:GetService("HttpService")
-local CONFIG_FILE   = "usermode.json"
+local CONFIG_FILE = "usermode.json"
 local AUTOLOAD_FILE = "autoload.json"
-
-local config = { toggles={}, raidMethod="Anubis", voidMethod="Vampire", raidBoss="Avdol", voidBoss="Avdol" }
-
+local HttpService = game:GetService("HttpService")
+local config = {
+    toggles = {},
+    raidMethod = "Anubis",
+    voidMethod = "Vampire",
+    raidBoss = "Avdol",
+    voidBoss = "Avdol",
+    kqBoss = "Avdol",
+    kqMethod = "Killer Queen",
+}
 local function saveConfig()
-    pcall(function() writefile(CONFIG_FILE, HttpService:JSONEncode(config)) end)
+    local ok, err = pcall(function()
+        local encoded = HttpService:JSONEncode(config)
+        writefile(CONFIG_FILE, encoded)
+        print("[Config] Saved: " .. encoded)
+    end)
+    if not ok then warn("[Config] Failed to save: " .. tostring(err)) end
 end
 local function loadConfig()
-    local ok,data=pcall(readfile,CONFIG_FILE); if not ok or not data then return end
-    local ok2,parsed=pcall(function() return HttpService:JSONDecode(data) end); if not ok2 or not parsed then return end
-    if parsed.toggles    then for k,v in pairs(parsed.toggles) do config.toggles[k]=v end end
-    if parsed.raidMethod then config.raidMethod=parsed.raidMethod end
-    if parsed.voidMethod then config.voidMethod=parsed.voidMethod end
-    if parsed.raidBoss   then config.raidBoss=parsed.raidBoss end
-    if parsed.voidBoss   then config.voidBoss=parsed.voidBoss end
+    local ok, data = pcall(readfile, CONFIG_FILE)
+    if not ok or not data then return end
+    local ok2, parsed = pcall(function() return HttpService:JSONDecode(data) end)
+    if not ok2 or not parsed then return end
+    if parsed.toggles then for k, v in pairs(parsed.toggles) do config.toggles[k] = v end end
+    if parsed.raidMethod then config.raidMethod = parsed.raidMethod end
+    if parsed.voidMethod then config.voidMethod = parsed.voidMethod end
+    if parsed.raidBoss then config.raidBoss = parsed.raidBoss end
+    if parsed.voidBoss then config.voidBoss = parsed.voidBoss end
 end
 local function getAutoloadName()
-    local ok,data=pcall(readfile,AUTOLOAD_FILE); if not ok or not data then return nil end
-    local ok2,parsed=pcall(function() return HttpService:JSONDecode(data) end); if not ok2 or not parsed then return nil end
+    local ok, data = pcall(readfile, AUTOLOAD_FILE)
+    if not ok or not data then return nil end
+    local ok2, parsed = pcall(function() return HttpService:JSONDecode(data) end)
+    if not ok2 or not parsed then return nil end
     return parsed.profile or nil
 end
-local function setAutoload(name) pcall(function() writefile(AUTOLOAD_FILE,HttpService:JSONEncode({profile=name})) end) end
-local function clearAutoload()   pcall(delfile, AUTOLOAD_FILE) end
-
+local function setAutoload(name)
+    pcall(function() writefile(AUTOLOAD_FILE, HttpService:JSONEncode({ profile = name })) end)
+end
+local function clearAutoload()
+    pcall(delfile, AUTOLOAD_FILE)
+end
 loadConfig()
 local _autoloadName = getAutoloadName()
 if _autoloadName then
-    local ok,data=pcall(readfile,"configs/".._autoloadName..".json")
+    local ok, data = pcall(readfile, "configs/" .. _autoloadName .. ".json")
     if ok and data then
-        local ok2,parsed=pcall(function() return HttpService:JSONDecode(data) end)
+        local ok2, parsed = pcall(function() return HttpService:JSONDecode(data) end)
         if ok2 and parsed then
-            if parsed.toggles    then for k,v in pairs(parsed.toggles) do config.toggles[k]=v end end
-            if parsed.raidMethod then config.raidMethod=parsed.raidMethod end
-            if parsed.voidMethod then config.voidMethod=parsed.voidMethod end
-            if parsed.raidBoss   then config.raidBoss=parsed.raidBoss end
-            if parsed.voidBoss   then config.voidBoss=parsed.voidBoss end
+            if parsed.toggles then for k, v in pairs(parsed.toggles) do config.toggles[k] = v end end
+            if parsed.raidMethod then config.raidMethod = parsed.raidMethod end
+            if parsed.voidMethod then config.voidMethod = parsed.voidMethod end
+            if parsed.raidBoss then config.raidBoss = parsed.raidBoss end
+            if parsed.voidBoss then config.voidBoss = parsed.voidBoss end
+            print("[Config] Autoloaded: " .. _autoloadName)
         end
     end
 end
-
 -- ─────────────────────────────────────────────
--- Exploits Tab
+-- GalaxLib UI — Exploits Tab
 -- ─────────────────────────────────────────────
 local Tab = Win:AddTab("Exploits")
 local Sec = Tab:AddSection("Farm Scripts")
-
-local t1 = Sec:AddToggle("Auto Escapee (Anubis R+X)", config.toggles["Anubis"] or false, function(v)
-    config.toggles["Anubis"]=v; _G.AutoFarm_Enabled=v; saveConfig()
-    if v then startFarm("Anubis",startAnubis) else stopFarm("Anubis") end
+local t1 = Sec:AddToggle("Auto Escapee (Anubis R + X)", config.toggles["Anubis"] or false, function(enabled)
+    config.toggles["Anubis"] = enabled; _G.AutoFarm_Enabled = enabled; saveConfig()
+    if enabled then startFarm("Anubis", startAnubis) else stopFarm("Anubis") end
 end)
-if config.toggles["Anubis"] then startFarm("Anubis",startAnubis) end
-
+if config.toggles["Anubis"] then _G.AutoFarm_Enabled = true; startFarm("Anubis", startAnubis) end
 Sec:AddSeparator()
-
-local t2 = Sec:AddToggle("Auto Escapee 2 (Anubis R)", config.toggles["Bizarre"] or false, function(v)
-    config.toggles["Bizarre"]=v; _G.AutoFarm_Enabled=v; saveConfig()
-    if v then startFarm("Bizarre",startBizarre) else stopFarm("Bizarre") end
+local t2 = Sec:AddToggle("Auto Escapee 2 (Anubis R)", config.toggles["Bizarre"] or false, function(enabled)
+    config.toggles["Bizarre"] = enabled; _G.AutoFarm_Enabled = enabled; saveConfig()
+    if enabled then startFarm("Bizarre", startBizarre) else stopFarm("Bizarre") end
 end)
-if config.toggles["Bizarre"] then startFarm("Bizarre",startBizarre) end
-
+if config.toggles["Bizarre"] then _G.AutoFarm_Enabled = true; startFarm("Bizarre", startBizarre) end
 Sec:AddSeparator()
-
-local t3 = Sec:AddToggle("MIH Mob Farm (Z)", config.toggles["MIH"] or false, function(v)
-    config.toggles["MIH"]=v; _G.AutoMob_Enabled=v; saveConfig()
-    if v then startFarm("MIH",startMIH) else stopFarm("MIH") end
+local t3 = Sec:AddToggle("MIH Mob Farm (Z)", config.toggles["MIH"] or false, function(enabled)
+    config.toggles["MIH"] = enabled; _G.AutoMob_Enabled = enabled; saveConfig()
+    if enabled then startFarm("MIH", startMIH) else stopFarm("MIH") end
 end)
-if config.toggles["MIH"] then startFarm("MIH",startMIH) end
-
+if config.toggles["MIH"] then _G.AutoMob_Enabled = true; startFarm("MIH", startMIH) end
 -- ─────────────────────────────────────────────
--- Teleports Tab
+-- GalaxLib UI — Teleports Tab
 -- ─────────────────────────────────────────────
 local TpTab = Win:AddTab("Teleports")
-
+-- Teleport destination tables
+-- Replace Vector3 values with real in-game coordinates as needed
 local tpData = {
-    { section="Raids", entries={
-        {name="Avdol Raid",  pos=Vector3.new(334,876,1021)},
-        {name="Jotaro Raid", pos=Vector3.new(1076,884,206)},
-        {name="Kira Raid",   pos=Vector3.new(1025,875,-651)},
-        {name="Dio Raid",    pos=Vector3.new(2803,950,746)},
-    }},
-    { section="NPCs", entries={
-        {name="Prison Escapee", pos=Vector3.new(840,886,-625)},
-        {name="Delinquent",     pos=Vector3.new(1483,875,-568)},
-        {name="Muhammad Avdol", pos=Vector3.new(786,1016,-8)},
-        {name="Stand User",     pos=Vector3.new(500,880,-400)},
-    }},
-    { section="Locations", entries={
-        {name="Spawn",  pos=Vector3.new(0,876,0)},
-        {name="Prison", pos=Vector3.new(840,886,-625)},
-        {name="City",   pos=Vector3.new(1483,875,-568)},
-        {name="Desert", pos=Vector3.new(600,880,800)},
-    }},
-    { section="Bosses", entries={
-        {name="Avdol",  pos=Vector3.new(786,1016,-8)},
-        {name="Jotaro", pos=Vector3.new(1072,884,208)},
-        {name="Kira",   pos=Vector3.new(0,876,0)},
-        {name="Dio",    pos=Vector3.new(200,876,300)},
-    }},
-    { section="Bus Stops", entries={
-        {name="Bus Stop 1",  pos=Vector3.new(1287,875,-534)},
-        {name="Bus Stop 2",  pos=Vector3.new(1217,875,-58)},
-        {name="Bus Stop 3",  pos=Vector3.new(622,887,-439)},
-        {name="Bus Stop 4",  pos=Vector3.new(2214,875,-394)},
-        {name="Bus Stop 5",  pos=Vector3.new(1673,875,-214)},
-        {name="Bus Stop 6",  pos=Vector3.new(2597,875,-119)},
-        {name="Bus Stop 7",  pos=Vector3.new(1266,875,-1117)},
-        {name="Bus Stop 8",  pos=Vector3.new(676,889,144)},
-        {name="Bus Stop 9",  pos=Vector3.new(2504,875,97)},
-        {name="Bus Stop 10", pos=Vector3.new(137,892,318)},
-        {name="Bus Stop 11", pos=Vector3.new(160,892,13)},
-        {name="Bus Stop 12", pos=Vector3.new(-181,892,46)},
-        {name="Bus Stop 13", pos=Vector3.new(1642,875,77)},
-        {name="Bus Stop 14", pos=Vector3.new(655,908,1183)},
-        {name="Bus Stop 15", pos=Vector3.new(1902,875,170)},
-        {name="Bus Stop 16", pos=Vector3.new(-1456,910,542)},
-        {name="Bus Stop 17", pos=Vector3.new(1169,909,1246)},
-        {name="Bus Stop 18", pos=Vector3.new(1918,933,1439)},
-        {name="Bus Stop 19", pos=Vector3.new(1323,875,304)},
-    }},
-    { section="Territories", entries={
-        {name="Port",        pos=Vector3.new(-1506,886,1332)},
-        {name="Alleyway",    pos=Vector3.new(1488,875,-706)},
-        {name="Gas Station", pos=Vector3.new(2308,875,404)},
-    }},
+    {
+        section = "Raids",
+        entries = {
+            { name = "Avdol Raid", pos = Vector3.new(334, 876, 1021) },
+            { name = "Jotaro Raid", pos = Vector3.new(1076, 884, 206) },
+            { name = "Kira Raid", pos = Vector3.new(1025, 875, -651) },
+            { name = "Dio Raid", pos = Vector3.new(2803, 950, 746) },
+        },
+    },
+    {
+        section = "NPCs",
+        entries = {
+            { name = "Prison Escapee", pos = Vector3.new(840, 886, -625) },
+            { name = "Delinquent", pos = Vector3.new(1483, 875, -568) },
+            { name = "Muhammad Avdol", pos = Vector3.new(786, 1016, -8) },
+            { name = "Stand User", pos = Vector3.new(500, 880, -400) },
+        },
+    },
+    {
+        section = "Locations",
+        entries = {
+            { name = "Spawn", pos = Vector3.new(0, 876, 0) },
+            { name = "Prison", pos = Vector3.new(840, 886, -625) },
+            { name = "City", pos = Vector3.new(1483, 875, -568) },
+            { name = "Desert", pos = Vector3.new(600, 880, 800) },
+        },
+    },
+    {
+        section = "Bosses",
+        entries = {
+            { name = "Avdol", pos = Vector3.new(786, 1016, -8) },
+            { name = "Jotaro", pos = Vector3.new(1072, 884, 208) },
+            { name = "Kira", pos = Vector3.new(0, 876, 0) },
+            { name = "Dio", pos = Vector3.new(200, 876, 300) },
+        },
+    },
+    {
+        section = "Bus Stops",
+        entries = {
+            { name = "Bus Stop 1", pos = Vector3.new(1287, 875, -534) },
+            { name = "Bus Stop 2", pos = Vector3.new(1217, 875, -58) },
+            { name = "Bus Stop 3", pos = Vector3.new(622, 887, -439) },
+            { name = "Bus Stop 4", pos = Vector3.new(2214, 875, -394) },
+            { name = "Bus Stop 5", pos = Vector3.new(1673, 875, -214) },
+            { name = "Bus Stop 6", pos = Vector3.new(2597, 875, -119) },
+            { name = "Bus Stop 7", pos = Vector3.new(1266, 875, -1117) },
+            { name = "Bus Stop 8", pos = Vector3.new(676, 889, 144) },
+            { name = "Bus Stop 9", pos = Vector3.new(2504, 875, 97) },
+            { name = "Bus Stop 10", pos = Vector3.new(137, 892, 318) },
+            { name = "Bus Stop 11", pos = Vector3.new(160, 892, 13) },
+            { name = "Bus Stop 12", pos = Vector3.new(-181, 892, 46) },
+            { name = "Bus Stop 13", pos = Vector3.new(1642, 875, 77) },
+            { name = "Bus Stop 14", pos = Vector3.new(655, 908, 1183) },
+            { name = "Bus Stop 15", pos = Vector3.new(1902, 875, 170) },
+            { name = "Bus Stop 16", pos = Vector3.new(-1456, 910, 542) },
+            { name = "Bus Stop 17", pos = Vector3.new(1169, 909, 1246) },
+            { name = "Bus Stop 18", pos = Vector3.new(1918, 933, 1439) },
+            { name = "Bus Stop 19", pos = Vector3.new(1323, 875, 304) },
+        },
+    },
+    {
+        section = "Gang Territories",
+        entries = {
+            { name = "Port", pos = Vector3.new(-1506, 886, 1332) },
+            { name = "Alleyway", pos = Vector3.new(1488, 875, -706) },
+            { name = "Gas Station", pos = Vector3.new(2308, 875, 404) },
+        },
+    },
 }
-
+-- Build each teleport section
 for _, group in ipairs(tpData) do
-    local tpSec  = TpTab:AddSection(group.section)
-    local names  = {}
+    local tpSec = TpTab:AddSection(group.section)
+    local names = {}
     for _, e in ipairs(group.entries) do table.insert(names, e.name) end
     local selected = names[1]
-    tpSec:AddDropdown(group.section, names, selected, function(v) selected = v end)
+    tpSec:AddDropdown(group.section, names, selected, function(val)
+        selected = val
+    end)
+    -- Cap to 3 visible rows so opened dropdown stays inside the window
+    pcall(function()
+        for _, w in ipairs(tpSec._widgets) do
+            if w.type == "dropdown" then w.maxVisible = 3 end
+        end
+    end)
     tpSec:AddButton("Teleport", function()
         local hrp = getHRP()
-        if not hrp then Win:Notify("No character", "Teleports", 2); return end
+        if not hrp then Win:Notify("Character not found", "Teleports", 2); return end
         for _, e in ipairs(group.entries) do
             if e.name == selected then
-                pcall(function() hrp.Position=e.pos; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end)
-                Win:Notify("→ "..e.name, "Teleports", 2); return
+                pcall(function()
+                    hrp.Position = e.pos
+                    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                end)
+                Win:Notify("Teleported to " .. e.name, "Teleports", 2)
+                return
             end
         end
     end)
 end
-
 -- ─────────────────────────────────────────────
 -- Raid Tab
 -- ─────────────────────────────────────────────
-local RAID_PLACE_ID     = 14890802310
+local RAID_PLACE_ID = 14890802310
 local AVDOL_FIGHT_PLACE = 74747090658891
-local E_KEY=0x45; local ONE_KEY=0x31; local TAB_KEY2=0x09
-local THREE_KEY=0x33; local V_KEY=0x56
-
+local E_KEY = 0x45; local ONE_KEY = 0x31
+local R_KEY = 0x52; local Z_KEY2 = 0x5A
+local X_KEY2 = 0x58; local C_KEY = 0x43
 local avdolOptions = {}
-local raidBoss  = config.raidBoss
-local raidMethod= config.raidMethod
-local voidBoss  = config.voidBoss
-local voidMethod= config.voidMethod
-
 local function findAvdolNPC()
     for _, obj in liveFolder:GetChildren() do
-        if obj.Name=="Server" then continue end
+        if obj.Name == "Server" then continue end
         if not obj:IsA("Model") then continue end
         if playerNames[obj.Name] then continue end
-        if obj.Name:sub(1,15)~=".Muhammad Avdol" then continue end
+        if obj.Name:sub(1, 15) ~= ".Muhammad Avdol" then continue end
         if not obj:FindFirstChild("HumanoidRootPart") then continue end
-        local hum=obj:FindFirstChildWhichIsA("Humanoid")
-        if not hum or hum.Health<=0 then continue end
+        local hum = obj:FindFirstChildWhichIsA("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
         return obj
     end
     return nil
 end
-
-local function clickQuickPlay()
-    local playerGui=player:WaitForChild("PlayerGui")
-    local mainMenu=playerGui:FindFirstChild("Main Menu"); if not mainMenu then return end
-    local buttons=mainMenu:WaitForChild("Buttons",5)
-    local qp=buttons and buttons:WaitForChild("Quick Play",5); if not qp then return end
-    task.wait(0.5)
-    pcall(function()
-        local abs=qp.AbsolutePosition; local sz=qp.AbsoluteSize
-        local x=abs.X+sz.X/2+50; local y=abs.Y+sz.Y/2
-        mousemoveabs(x,y); task.wait(0.2)
-        for i=1,25 do mousemoveabs(x+i,y); task.wait(0.01) end
-        task.wait(0.1); mouse1press(); task.wait(0.1); mouse1release()
-    end)
-    task.wait(3)
-end
-
 local function startAnubisRaidFight(state)
-    local SAFE=Vector3.new(786,1016,-8)
-    local keys={0x52,0x5A,0x58,0x43}
-    clickQuickPlay()
-    local hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
-    task.wait(0.5); pressTabUntilStandSummoned()
+    local SAFE_POS = Vector3.new(786, 1016, -8)
+    local skillKeys = {R_KEY, Z_KEY2, X_KEY2, C_KEY}
+    local playerGui = player:WaitForChild("PlayerGui")
+    local mainMenu = playerGui:FindFirstChild("Main Menu")
+    if mainMenu then
+        print("[Avdol Raid] Found Main Menu, waiting for Quick Play button...")
+        local buttons = mainMenu:WaitForChild("Buttons", 5)
+        local quickPlay = buttons and buttons:WaitForChild("Quick Play", 5)
+        if quickPlay then
+            print("[Avdol Raid] Clicking Quick Play...")
+            task.wait(0.5)
+            pcall(function()
+                local abs = quickPlay.AbsolutePosition; local sz = quickPlay.AbsoluteSize
+                local startX = abs.X + sz.X / 2 + 50; local y = abs.Y + sz.Y / 2
+                mousemoveabs(startX, y); task.wait(0.2)
+                for i = 1, 25 do mousemoveabs(startX + i, y); task.wait(0.01) end
+                task.wait(0.1); mouse1press(); task.wait(0.1); mouse1release()
+            end)
+            task.wait(3)
+        end
+    end
+    local hrp = getHRP()
+    if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+    task.wait(0.5)
+    pressTabUntilStandSummoned()
     while state.alive do
-        local avdol=findAvdolNPC()
+        local hasSelection = false
+        for _ in pairs(avdolOptions) do hasSelection = true break end
+        if not hasSelection then print("[Avdol Raid] No option selected."); task.wait(2); continue end
+        local avdol = findAvdolNPC()
         if not avdol then
-            hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
+            hrp = getHRP()
+            if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
             task.wait(1); continue
         end
-        local aHRP=avdol:FindFirstChild("HumanoidRootPart"); if not aHRP then task.wait(0.5); continue end
-        hrp=getHRP(); if hrp then pcall(function() hrp.Position=aHRP.Position; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
-        for _,key in ipairs(keys) do
+        local avdolHRP = avdol:FindFirstChild("HumanoidRootPart")
+        if not avdolHRP then task.wait(0.5) continue end
+        hrp = getHRP()
+        if hrp then pcall(function() hrp.Position = avdolHRP.Position; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+        for _, key in ipairs(skillKeys) do
             if not state.alive then break end
-            pcall(keypress,key); task.wait(0.1); pcall(keyrelease,key); task.wait(0.25)
-            avdol=findAvdolNPC(); aHRP=avdol and avdol:FindFirstChild("HumanoidRootPart")
-            if aHRP then hrp=getHRP(); if hrp then pcall(function() hrp.Position=aHRP.Position; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end end
+            pcall(keypress, key); task.wait(0.1); pcall(keyrelease, key); task.wait(0.25)
+            avdol = findAvdolNPC(); avdolHRP = avdol and avdol:FindFirstChild("HumanoidRootPart")
+            if avdolHRP then
+                hrp = getHRP()
+                if hrp then pcall(function() hrp.Position = avdolHRP.Position; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+            end
             task.wait(1)
-            hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
+            hrp = getHRP()
+            if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
             task.wait(1.5)
         end
         task.wait(10)
     end
 end
-
+local THREE_KEY = 0x33; local V_KEY = 0x56
 local function startVampireVoidFight(state)
-    local SAFE=Vector3.new(786,1016,-8); local VOID=Vector3.new(202.43,-495,203.71)
-    clickQuickPlay()
-    local hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
+    local SAFE_POS = Vector3.new(786, 1016, -8)
+    task.wait(1)
+    local playerGui = player:WaitForChild("PlayerGui")
+    local mainMenu = playerGui:FindFirstChild("Main Menu")
+    if mainMenu then
+        local buttons = mainMenu:WaitForChild("Buttons", 5)
+        local quickPlay = buttons and buttons:WaitForChild("Quick Play", 5)
+        if quickPlay then
+            task.wait(0.5)
+            pcall(function()
+                local abs = quickPlay.AbsolutePosition; local sz = quickPlay.AbsoluteSize
+                local startX = abs.X + sz.X / 2 + 50; local y = abs.Y + sz.Y / 2
+                mousemoveabs(startX, y); task.wait(0.2)
+                for i = 1, 25 do mousemoveabs(startX + i, y); task.wait(0.01) end
+                task.wait(0.1); mouse1press(); task.wait(0.1); mouse1release()
+            end)
+            task.wait(3)
+        end
+    end
+    local hrp = getHRP()
+    if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
     task.wait(10)
     while state.alive do
-        local avdol=findAvdolNPC()
-        if not avdol then hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end; task.wait(1); continue end
-        local aHRP=avdol:FindFirstChild("HumanoidRootPart"); if not aHRP then task.wait(0.5); continue end
-        pcall(keypress,THREE_KEY); task.wait(0.1); pcall(keyrelease,THREE_KEY); task.wait(0.5)
-        local t0=tick()+0.3
-        while tick()<t0 do hrp=getHRP(); if hrp then pcall(function() hrp.Position=aHRP.Position; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end; task.wait() end
+        local hasSelection = false
+        for _ in pairs(avdolOptions) do hasSelection = true break end
+        if not hasSelection then print("[Vampire Void] No option selected."); task.wait(2); continue end
+        local avdol = findAvdolNPC()
+        if not avdol then
+            hrp = getHRP()
+            if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+            task.wait(1); continue
+        end
+        local avdolHRP = avdol:FindFirstChild("HumanoidRootPart")
+        if not avdolHRP then task.wait(0.5) continue end
+        pcall(keypress, THREE_KEY); task.wait(0.1); pcall(keyrelease, THREE_KEY); task.wait(0.5)
+        task.wait(0.2)
+        local loopUntil = tick() + 0.3
+        while tick() < loopUntil do
+            hrp = getHRP()
+            if hrp then pcall(function() hrp.Position = avdolHRP.Position; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+            task.wait()
+        end
         task.wait(0.5)
-        hrp=getHRP(); if hrp then pcall(function() hrp.Position=VOID; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
-        local t1=tick()+2
-        while tick()<t1 do hrp=getHRP(); if hrp then pcall(function() hrp.Position=VOID; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end; task.wait() end
-        hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
-        task.wait(30)
+        hrp = getHRP()
+        if hrp then pcall(function() hrp.Position = Vector3.new(202.43,-495,203.71); hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+        local lockUntil = tick() + 2
+        while tick() < lockUntil do
+            hrp = getHRP()
+            if hrp then pcall(function() hrp.Position = Vector3.new(202.43,-495,203.71); hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+            task.wait()
+        end
+        hrp = getHRP()
+        if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+        task.wait(0.5); task.wait(30)
     end
 end
-
-local function startKQVoidFight(state)
-    local SAFE=Vector3.new(786,1016,-8); local VOID=Vector3.new(202.43,-495,203.71)
-    clickQuickPlay()
-    local hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
-    task.wait(0.5); pressTabUntilStandSummoned(); task.wait(10)
+local function startKillerQueenVoidFight(state)
+    local SAFE_POS = Vector3.new(786, 1016, -8)
+    task.wait(1)
+    local playerGui = player:WaitForChild("PlayerGui")
+    local mainMenu = playerGui:FindFirstChild("Main Menu")
+    if mainMenu then
+        local buttons = mainMenu:WaitForChild("Buttons", 5)
+        local quickPlay = buttons and buttons:WaitForChild("Quick Play", 5)
+        if quickPlay then
+            task.wait(0.5)
+            pcall(function()
+                local abs = quickPlay.AbsolutePosition; local sz = quickPlay.AbsoluteSize
+                local startX = abs.X + sz.X / 2 + 50; local y = abs.Y + sz.Y / 2
+                mousemoveabs(startX, y); task.wait(0.2)
+                for i = 1, 25 do mousemoveabs(startX + i, y); task.wait(0.01) end
+                task.wait(0.1); mouse1press(); task.wait(0.1); mouse1release()
+            end)
+            task.wait(3)
+        end
+    end
+    local hrp = getHRP()
+    if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+    task.wait(0.5)
+    pressTabUntilStandSummoned()
+    task.wait(10)
     while state.alive do
-        local avdol=findAvdolNPC()
-        if not avdol then hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end; task.wait(1); continue end
-        local aHRP=avdol:FindFirstChild("HumanoidRootPart"); if not aHRP then task.wait(0.5); continue end
-        pcall(keypress,V_KEY); hrp=getHRP(); if hrp then pcall(function() hrp.Position=aHRP.Position; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
-        task.wait(0.1); pcall(keyrelease,V_KEY); task.wait(0.5)
-        hrp=getHRP(); if hrp then pcall(function() hrp.Position=VOID; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
-        local t1=tick()+5
-        while tick()<t1 do hrp=getHRP(); if hrp then pcall(function() hrp.Position=VOID; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end; task.wait() end
-        hrp=getHRP(); if hrp then pcall(function() hrp.Position=SAFE; hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
-        task.wait(30)
+        local avdol = findAvdolNPC()
+        if not avdol then
+            hrp = getHRP()
+            if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+            task.wait(1); continue
+        end
+        local avdolHRP = avdol:FindFirstChild("HumanoidRootPart")
+        if not avdolHRP then task.wait(0.5) continue end
+        pcall(keypress, V_KEY)
+        hrp = getHRP()
+        if hrp then pcall(function() hrp.Position = avdolHRP.Position; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+        task.wait(0.1); pcall(keyrelease, V_KEY); task.wait(0.5)
+        hrp = getHRP()
+        if hrp then pcall(function() hrp.Position = Vector3.new(202.43,-495,203.71); hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+        local lockUntil = tick() + 5
+        while tick() < lockUntil do
+            hrp = getHRP()
+            if hrp then pcall(function() hrp.Position = Vector3.new(202.43,-495,203.71); hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+            task.wait()
+        end
+        hrp = getHRP()
+        if hrp then pcall(function() hrp.Position = SAFE_POS; hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
+        task.wait(0.5); task.wait(30)
     end
 end
-
-local function doAvdolTP()
-    local hrp=getHRP(); if not hrp then return end
-    local stand=getSummonedStand()
-    if stand and stand~="" then pcall(keypress,TAB_KEY2);task.wait(0.1);pcall(keyrelease,TAB_KEY2);task.wait(0.3) end
-    pcall(function() hrp.Position=Vector3.new(333.79,876,1021); hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end); task.wait(0.5)
-    pcall(keypress,E_KEY);task.wait(0.5);pcall(keyrelease,E_KEY)
-    pcall(keypress,ONE_KEY);task.wait(0.1);pcall(keyrelease,ONE_KEY); task.wait(0.1)
-    hrp=getHRP(); if hrp then pcall(function() hrp.Position=Vector3.new(348,876,1010); hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end) end
+-- Shared Avdol lobby TP — called by both Auto Raid and Auto Void when PlaceId == 14890802310
+local function doAvdolLobbyTP()
+    local hrp = getHRP()
+    if not hrp then return end
+    local stand = getSummonedStand()
+    if stand and stand ~= "" then
+        pcall(keypress, TAB_KEY); task.wait(0.1); pcall(keyrelease, TAB_KEY); task.wait(0.3)
+    end
+    pcall(function() hrp.Position = Vector3.new(333.79, 876, 1021); hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+    task.wait(0.5)
+    pcall(keypress, E_KEY); task.wait(0.5); pcall(keyrelease, E_KEY)
+    pcall(keypress, ONE_KEY); task.wait(0.1); pcall(keyrelease, ONE_KEY)
+    task.wait(0.1)
+    hrp = getHRP()
+    if hrp then pcall(function() hrp.Position = Vector3.new(348, 876, 1010); hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end) end
 end
-
-local function doJotaroTP()
-    local hrp=getHRP(); if not hrp then return end
-    local stand=getSummonedStand()
-    if stand and stand~="" then pcall(keypress,TAB_KEY2);task.wait(0.1);pcall(keyrelease,TAB_KEY2);task.wait(0.3) end
-    pcall(function() hrp.Position=Vector3.new(1072,884,208); hrp.AssemblyLinearVelocity=Vector3.new(0,0,0) end); task.wait(0.5)
-    pcall(keypress,E_KEY);task.wait(1);pcall(keyrelease,E_KEY); task.wait(0.5)
-    pcall(keypress,ONE_KEY);task.wait(0.1);pcall(keyrelease,ONE_KEY)
+-- Shared Jotaro lobby TP function with fail safe — used by both Auto Raid and Auto Void for Jotaro
+local function doJotaroLobbyTP()
+    local retries = 3 -- Number of retry attempts
+    local entryTimeout = 5 -- Seconds to wait after actions to check if entered (fail safe)
+    for attempt = 1, retries do
+        print("[Jotaro Lobby] Attempt " .. attempt .. " to enter...")
+        local hrp = getHRP()
+        if not hrp then print("[Jotaro Lobby] No HRP, aborting attempt."); continue end
+        local stand = getSummonedStand()
+        if stand and stand ~= "" then
+            pcall(keypress, TAB_KEY); task.wait(0.1); pcall(keyrelease, TAB_KEY); task.wait(0.3)
+        end
+        -- TP to selected location (Jotaro raid entrance)
+        pcall(function() hrp.Position = Vector3.new(1072, 884, 208); hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+        task.wait(0.5)
+        -- Hold E
+        pcall(keypress, E_KEY); task.wait(1); pcall(keyrelease, E_KEY)
+        task.wait(0.5)
+        -- Press 1
+        pcall(keypress, ONE_KEY); task.wait(0.1); pcall(keyrelease, ONE_KEY)
+        -- Fail safe: Wait for potential place change, check if still in lobby
+        task.wait(entryTimeout)
+        if game.PlaceId ~= RAID_PLACE_ID then
+            print("[Jotaro Lobby] Successfully entered on attempt " .. attempt)
+            return -- Exited lobby, no need to retry
+        end
+        print("[Jotaro Lobby] Failed to enter on attempt " .. attempt .. ", retrying...")
+    end
+    print("[Jotaro Lobby] Failed all attempts to enter.")
 end
-
-local function lobbyLoop(state, tpFn, fightFn)
-    if game.PlaceId==AVDOL_FIGHT_PLACE then fightFn(state); return end
-    if game.PlaceId~=RAID_PLACE_ID then warn("Wrong game"); return end
+local function startAvdolLobby(state, fightFn)
+    if game.PlaceId == AVDOL_FIGHT_PLACE then fightFn(state); return end
+    if game.PlaceId ~= RAID_PLACE_ID then warn("[Avdol] Wrong game. PlaceId must be " .. RAID_PLACE_ID); return end
     while state.alive do
-        if not getHRP() then task.wait(0.1); continue end
-        tpFn(); task.wait(15)
+        if not getHRP() then task.wait(0.1) continue end
+        if game.PlaceId == 14890802310 then doAvdolLobbyTP() end
+        task.wait(15)
     end
 end
-
+local function startJotaroLobby(state, fightFn)
+    if game.PlaceId == AVDOL_FIGHT_PLACE then fightFn(state); return end
+    if game.PlaceId ~= RAID_PLACE_ID then warn("[Jotaro] Wrong game. PlaceId must be " .. RAID_PLACE_ID); return end
+    while state.alive do
+        if not getHRP() then task.wait(0.1) continue end
+        if game.PlaceId == 14890802310 then doJotaroLobbyTP() end
+        task.wait(15)
+    end
+end
 local function startAvdolRaid(state)
-    if game.PlaceId==RAID_PLACE_ID then
+    if game.PlaceId == 14890802310 then
+        -- use shared lobby TP functions for both bosses
         while state.alive do
-            if not getHRP() then task.wait(0.1); continue end
-            if raidBoss=="Jotaro" then doJotaroTP() else doAvdolTP() end; task.wait(15)
-        end; return
+            if not getHRP() then task.wait(0.1) continue end
+            if raidBoss == "Jotaro" then doJotaroLobbyTP() else doAvdolLobbyTP() end
+            task.wait(15)
+        end
+        return
     end
-    local tpFn=raidBoss=="Jotaro" and doJotaroTP or doAvdolTP
-    lobbyLoop(state,tpFn,startAnubisRaidFight)
+    if raidBoss == "Jotaro" then startJotaroLobby(state, startAnubisRaidFight)
+    else startAvdolLobby(state, startAnubisRaidFight) end
 end
-
-local function startAvdolVoid(state)
-    if game.PlaceId==RAID_PLACE_ID then
-        while state.alive do
-            if not getHRP() then task.wait(0.1); continue end
-            if voidBoss=="Jotaro" then doJotaroTP() else doAvdolTP() end; task.wait(15)
-        end; return
-    end
-    local tpFn=voidBoss=="Jotaro" and doJotaroTP or doAvdolTP
-    local fightFn=voidMethod=="Killer Queen" and startKQVoidFight or startVampireVoidFight
-    lobbyLoop(state,tpFn,fightFn)
-end
-
 local function autoRetryFarm(state)
     while state.alive do
         pcall(function()
-            local pg=player:FindFirstChild("PlayerGui"); if not pg then return end
-            local rc=pg:FindFirstChild("raidcomplete"); if not rc then return end
-            local btn=rc.raid.retry.TextButton
-            local abs=btn.AbsolutePosition; local sz=btn.AbsoluteSize
-            local x=abs.X+sz.X/2; local y=abs.Y+sz.Y/2
-            mousemoveabs(x,y); task.wait(0.2)
-            for i=1,25 do mousemoveabs(x+i,y); task.wait(0.01) end
+            local playerGui = player:FindFirstChild("PlayerGui")
+            if not playerGui then return end
+            local raidComplete = playerGui:FindFirstChild("raidcomplete")
+            if not raidComplete then return end
+            print("[AutoRetry] raidcomplete detected, clicking retry...")
+            local retryBtn = raidComplete.raid.retry.TextButton
+            local rabs = retryBtn.AbsolutePosition; local rsz = retryBtn.AbsoluteSize
+            local startX = rabs.X + rsz.X / 2; local posY = rabs.Y + rsz.Y / 2
+            mousemoveabs(startX, posY); task.wait(0.2)
+            for i = 1, 25 do mousemoveabs(startX + i, posY); task.wait(0.01) end
             task.wait(0.1); mouse1press(); task.wait(0.1); mouse1release(); task.wait(1)
         end)
         task.wait(0.5)
     end
 end
-
 local RaidTab = Win:AddTab("Raid")
-
+local raidBoss = config.raidBoss
+local raidMethod = config.raidMethod
+local voidBoss = config.voidBoss
+local voidMethod = config.voidMethod
+local function startAvdolVoid(state)
+    if game.PlaceId == 14890802310 then
+        -- use shared lobby TP functions for both bosses
+        while state.alive do
+            if not getHRP() then task.wait(0.1) continue end
+            if voidBoss == "Jotaro" then doJotaroLobbyTP() else doAvdolLobbyTP() end
+            task.wait(15)
+        end
+        return
+    end
+    local lobbyFn = (voidBoss == "Jotaro") and startJotaroLobby or startAvdolLobby
+    if voidMethod == "Killer Queen" then lobbyFn(state, startKillerQueenVoidFight)
+    else lobbyFn(state, startVampireVoidFight) end
+end
 local AutoRaidSec = RaidTab:AddSection("Auto Raid")
-local wRaidBoss = AutoRaidSec:AddDropdown("Boss", {"Avdol","Jotaro","Kira","Dio"}, config.raidBoss, function(v)
-    raidBoss=v; config.raidBoss=v; saveConfig()
+local wRaidBoss = AutoRaidSec:AddDropdown("Boss", {"Avdol","Jotaro","Kira","Dio"}, config.raidBoss, function(selected)
+    raidBoss = selected; config.raidBoss = selected; saveConfig()
 end)
-local wRaidMethod = AutoRaidSec:AddDropdown("Method", {"Anubis"}, config.raidMethod, function(v)
-    raidMethod=v; config.raidMethod=v; avdolOptions={}; avdolOptions[v]=true; saveConfig()
+local wRaidMethod = AutoRaidSec:AddDropdown("Method", {"Anubis"}, config.raidMethod, function(selected)
+    raidMethod = selected; config.raidMethod = selected; avdolOptions = {}; avdolOptions[selected] = true; saveConfig()
 end)
 AutoRaidSec:AddSeparator()
-local wAutoRetry = AutoRaidSec:AddToggle("Auto Retry", config.toggles["AutoRetry"] or false, function(v)
-    config.toggles["AutoRetry"]=v; saveConfig()
-    if v then startFarm("AutoRetry",autoRetryFarm) else stopFarm("AutoRetry") end
+local wAutoRetry = AutoRaidSec:AddToggle("Auto Retry", config.toggles["AutoRetry"] or false, function(enabled)
+    config.toggles["AutoRetry"] = enabled; saveConfig()
+    if enabled then startFarm("AutoRetry", autoRetryFarm) else stopFarm("AutoRetry") end
 end)
-local wAvdolRaid = AutoRaidSec:AddToggle("Enabled", config.toggles["AvdolRaid"] or false, function(v)
-    config.toggles["AvdolRaid"]=v; saveConfig()
-    if v then startFarm("AvdolRaid",startAvdolRaid) else stopFarm("AvdolRaid") end
+local wAvdolRaid = AutoRaidSec:AddToggle("Enabled", config.toggles["AvdolRaid"] or false, function(enabled)
+    config.toggles["AvdolRaid"] = enabled; saveConfig()
+    if enabled then startFarm("AvdolRaid", startAvdolRaid) else stopFarm("AvdolRaid") end
 end)
-if config.toggles["AvdolRaid"] then startFarm("AvdolRaid",startAvdolRaid) end
-avdolOptions[config.raidMethod]=true
-
+if config.toggles["AvdolRaid"] then startFarm("AvdolRaid", startAvdolRaid) end
+avdolOptions[config.raidMethod] = true
 local AutoVoidSec = RaidTab:AddSection("Auto Void")
-local wVoidBoss = AutoVoidSec:AddDropdown("Boss", {"Avdol","Jotaro","Kira","Dio"}, config.voidBoss, function(v)
-    voidBoss=v; config.voidBoss=v; saveConfig()
+local wVoidBoss = AutoVoidSec:AddDropdown("Boss", {"Avdol","Jotaro","Kira","Dio"}, config.voidBoss, function(selected)
+    voidBoss = selected; config.voidBoss = selected; saveConfig()
 end)
-local wVoidMethod = AutoVoidSec:AddDropdown("Method", {"Vampire","Killer Queen"}, config.voidMethod, function(v)
-    voidMethod=v; config.voidMethod=v; saveConfig()
+local wVoidMethod = AutoVoidSec:AddDropdown("Method", {"Vampire","Killer Queen"}, config.voidMethod, function(selected)
+    voidMethod = selected; config.voidMethod = selected; saveConfig()
 end)
 AutoVoidSec:AddSeparator()
-local wAutoRetryVoid = AutoVoidSec:AddToggle("Auto Retry", config.toggles["AutoRetryVoid"] or false, function(v)
-    config.toggles["AutoRetryVoid"]=v; saveConfig()
-    if v then startFarm("AutoRetryVoid",autoRetryFarm) else stopFarm("AutoRetryVoid") end
+local wAutoRetryVoid = AutoVoidSec:AddToggle("Auto Retry", config.toggles["AutoRetryVoid"] or false, function(enabled)
+    config.toggles["AutoRetryVoid"] = enabled; saveConfig()
+    if enabled then startFarm("AutoRetryVoid", autoRetryFarm) else stopFarm("AutoRetryVoid") end
 end)
-local wVampireVoid = AutoVoidSec:AddToggle("Enabled", config.toggles["VampireVoid"] or false, function(v)
-    config.toggles["VampireVoid"]=v; saveConfig()
-    if v then startFarm("VampireVoid",startAvdolVoid) else stopFarm("VampireVoid") end
+local wVampireVoid = AutoVoidSec:AddToggle("Enabled", config.toggles["VampireVoid"] or false, function(enabled)
+    config.toggles["VampireVoid"] = enabled; saveConfig()
+    if enabled then startFarm("VampireVoid", startAvdolVoid) else stopFarm("VampireVoid") end
 end)
-if config.toggles["VampireVoid"] then startFarm("VampireVoid",startAvdolVoid) end
-
+if config.toggles["VampireVoid"] then startFarm("VampireVoid", startAvdolVoid) end
 -- ─────────────────────────────────────────────
--- Config / Profiles (injected into Settings tab)
+-- Config helpers (Profiles + Autoload)
 -- ─────────────────────────────────────────────
-local configName   = "default"
+local configName = "default"
 local autoloadName = getAutoloadName() or ""
-if autoloadName~="" then task.spawn(function() task.wait(1); Win:Notify("Autoload: "..autoloadName,"Config",4) end) end
-
+if autoloadName ~= "" then
+    task.spawn(function() task.wait(1); Win:Notify("Autoload: " .. autoloadName, "Config", 4) end)
+end
 local function listProfiles()
-    pcall(makefolder,"configs")
-    local ok,files=pcall(listfiles,"configs"); if not ok or not files then return {} end
-    local out={}
-    for _,f in ipairs(files) do local n=f:match("([^/\\]+)%.json$"); if n then out[#out+1]=n end end
-    return out
+    pcall(makefolder, "configs")
+    local ok, files = pcall(listfiles, "configs")
+    if not ok or not files then return {} end
+    local profiles = {}
+    for _, f in ipairs(files) do
+        local name = f:match("([^/\\]+)%.json$")
+        if name then table.insert(profiles, name) end
+    end
+    return profiles
 end
 local function saveProfile(name)
-    pcall(makefolder,"configs")
-    local ok=pcall(function() writefile("configs/"..name..".json",HttpService:JSONEncode(config)) end)
-    Win:Notify(ok and ("Saved: "..name) or "Save failed","Config",2)
+    pcall(makefolder, "configs")
+    local ok = pcall(function() writefile("configs/" .. name .. ".json", HttpService:JSONEncode(config)) end)
+    Win:Notify(ok and ("Saved: " .. name) or "Save failed", "Config", 2)
 end
 local function loadProfile(name)
-    local ok,data=pcall(readfile,"configs/"..name..".json")
-    if not ok or not data then Win:Notify("Not found: "..name,"Config",2); return end
-    local ok2,parsed=pcall(function() return HttpService:JSONDecode(data) end)
-    if not ok2 or not parsed then Win:Notify("Load failed","Config",2); return end
-    for n in pairs(farmThreads) do stopFarm(n) end
-    if parsed.toggles    then for k,v in pairs(parsed.toggles) do config.toggles[k]=v end end
-    if parsed.raidMethod then config.raidMethod=parsed.raidMethod; raidMethod=parsed.raidMethod; avdolOptions={}; avdolOptions[raidMethod]=true end
-    if parsed.voidMethod then config.voidMethod=parsed.voidMethod; voidMethod=parsed.voidMethod end
-    if parsed.raidBoss   then config.raidBoss=parsed.raidBoss;     raidBoss=parsed.raidBoss    end
-    if parsed.voidBoss   then config.voidBoss=parsed.voidBoss;     voidBoss=parsed.voidBoss    end
+    local ok, data = pcall(readfile, "configs/" .. name .. ".json")
+    if not ok or not data then Win:Notify("Not found: " .. name, "Config", 2); return end
+    local ok2, parsed = pcall(function() return HttpService:JSONDecode(data) end)
+    if not ok2 or not parsed then Win:Notify("Load failed", "Config", 2); return end
+    for farmName in pairs(farmThreads) do stopFarm(farmName) end
+    if parsed.toggles then for k, v in pairs(parsed.toggles) do config.toggles[k] = v end end
+    if parsed.raidMethod then config.raidMethod = parsed.raidMethod; raidMethod = parsed.raidMethod; avdolOptions = {}; avdolOptions[raidMethod] = true end
+    if parsed.voidMethod then config.voidMethod = parsed.voidMethod; voidMethod = parsed.voidMethod end
+    if parsed.raidBoss then config.raidBoss = parsed.raidBoss; raidBoss = parsed.raidBoss end
+    if parsed.voidBoss then config.voidBoss = parsed.voidBoss; voidBoss = parsed.voidBoss end
     pcall(function() t1:Set(config.toggles["Anubis"] or false) end)
     pcall(function() t2:Set(config.toggles["Bizarre"] or false) end)
     pcall(function() t3:Set(config.toggles["MIH"] or false) end)
@@ -618,92 +836,114 @@ local function loadProfile(name)
     pcall(function() wVoidMethod:Set(config.voidMethod) end)
     pcall(function() wAutoRetryVoid:Set(config.toggles["AutoRetryVoid"] or false) end)
     pcall(function() wVampireVoid:Set(config.toggles["VampireVoid"] or false) end)
-    if config.toggles["Anubis"]        then startFarm("Anubis",startAnubis) end
-    if config.toggles["Bizarre"]       then startFarm("Bizarre",startBizarre) end
-    if config.toggles["MIH"]           then startFarm("MIH",startMIH) end
-    if config.toggles["AutoRetry"]     then startFarm("AutoRetry",autoRetryFarm) end
-    if config.toggles["AvdolRaid"]     then startFarm("AvdolRaid",startAvdolRaid) end
-    if config.toggles["AutoRetryVoid"] then startFarm("AutoRetryVoid",autoRetryFarm) end
-    if config.toggles["VampireVoid"]   then startFarm("VampireVoid",startAvdolVoid) end
-    saveConfig(); Win:Notify("Loaded: "..name,"Config",2)
+    if config.toggles["Anubis"] then startFarm("Anubis", startAnubis) end
+    if config.toggles["Bizarre"] then startFarm("Bizarre", startBizarre) end
+    if config.toggles["MIH"] then startFarm("MIH", startMIH) end
+    if config.toggles["AutoRetry"] then startFarm("AutoRetry", autoRetryFarm) end
+    if config.toggles["AvdolRaid"] then startFarm("AvdolRaid", startAvdolRaid) end
+    if config.toggles["AutoRetryVoid"] then startFarm("AutoRetryVoid", autoRetryFarm) end
+    if config.toggles["VampireVoid"] then startFarm("VampireVoid", startAvdolVoid) end
+    saveConfig()
+    Win:Notify("Loaded: " .. name, "Config", 2)
 end
 local function deleteProfile(name)
-    local ok=pcall(delfile,"configs/"..name..".json")
-    Win:Notify(ok and ("Deleted: "..name) or "Delete failed","Config",2)
+    local ok = pcall(delfile, "configs/" .. name .. ".json")
+    Win:Notify(ok and ("Deleted: " .. name) or "Delete failed", "Config", 2)
 end
-
+-- ─────────────────────────────────────────────
+-- Inject into Settings tab
+-- Layout: [Profiles (left) | Menu+Autoload+Theme (right)]
+-- ─────────────────────────────────────────────
 task.spawn(function()
-    -- Find Settings tab (last one, added by _buildSettings)
-    local ST=nil
-    for _,tab in ipairs(Win._tabs) do if tab._name=="Settings" then ST=tab; break end end
-    if not ST then return end
-
-    local PS=ST:AddSection("Profiles")
-    PS:AddTextbox("Profile Name", configName, function(v) configName=v end, "Enter name...")
+    local ST = nil
+    for _, tab in ipairs(Win._tabs) do
+        if tab._name == "Settings" then ST = tab; break end
+    end
+    if not ST then warn("[Config] Settings tab not found"); return end
+    local PS = ST:AddSection("Profiles")
+    PS:AddTextbox("Profile Name", configName, function(v) configName = v end, "Enter name...")
     PS:AddSeparator()
     PS:AddButton("Save Profile", function()
-        if configName~="" then saveProfile(configName) else Win:Notify("Enter a name","Config",2) end
+        if configName ~= "" then saveProfile(configName)
+        else Win:Notify("Enter a name first", "Config", 2) end
     end)
-    PS:AddDropdown("Saved Profiles", listProfiles(), "", function(v) configName=v end)
+    PS:AddDropdown("Saved Profiles", listProfiles(), "", function(sel) configName = sel end)
     PS:AddButton("Refresh List", function()
-        local profiles=listProfiles()
-        for _,w in ipairs(PS._widgets) do
-            if w.type=="dropdown" and w.label=="Saved Profiles" then
-                w.options=profiles; w.value=profiles[1] or ""; w.scroll=0; w._search=""
-                if profiles[1] then configName=profiles[1] end; break
+        local profiles = listProfiles()
+        for _, w in ipairs(PS._widgets) do
+            if w.type == "dropdown" and w.label == "Saved Profiles" then
+                w.options = profiles; w.value = profiles[1] or ""; w.scroll = 0
+                w._search = ""; w._sfocus = false
+                if profiles[1] then configName = profiles[1] end
+                break
             end
         end
-        Win:Notify(#profiles>0 and ("Refreshed: "..#profiles.." profile(s)") or "No profiles","Config",2)
+        Win:Notify(#profiles > 0 and ("Refreshed: " .. #profiles .. " profile(s)") or "No profiles found", "Config", 2)
     end)
     PS:AddSeparator()
     PS:AddButton("Load Profile", function()
-        if configName~="" then loadProfile(configName) else Win:Notify("Select a profile","Config",2) end
+        if configName ~= "" then loadProfile(configName)
+        else Win:Notify("Select a profile first", "Config", 2) end
     end)
     PS:AddButton("Overwrite Profile", function()
-        if configName~="" then
-            if not pcall(readfile,"configs/"..configName..".json") then Win:Notify("Not found","Config",2); return end
+        if configName ~= "" then
+            local ok = pcall(readfile, "configs/" .. configName .. ".json")
+            if not ok then Win:Notify("Not found: " .. configName, "Config", 2); return end
             saveProfile(configName)
-        else Win:Notify("Select a profile","Config",2) end
+        else Win:Notify("Select a profile first", "Config", 2) end
     end)
     PS:AddButton("Delete Profile", function()
-        if configName~="" then deleteProfile(configName) else Win:Notify("Select a profile","Config",2) end
-    end, Color3.fromRGB(160,40,40))
-
-    -- SM = Menu section [1], STH = Theme section [2] (from _buildSettings)
-    local SM  = ST._sections[1]
+        if configName ~= "" then deleteProfile(configName)
+        else Win:Notify("Select a profile first", "Config", 2) end
+    end, Color3.fromRGB(160, 40, 40))
+    local SM = ST._sections[1]
     local STH = ST._sections[2]
-    local function smReg(w) table.insert(SM._widgets,w) end
-
-    smReg({type="sep"})
-    smReg({type="label",label="Autoload"})
-    local alLabel={type="label",label="Active: "..(autoloadName~="" and autoloadName or "None"),color=Color3.fromRGB(110,110,130)}
-    smReg(alLabel)
-    local alDrop={type="dropdown",label="Select Profile",options=listProfiles(),value=autoloadName,maxVisible=5,scroll=0,cb=function(v)autoloadName=v end,_search="",_sfoc=false}
-    smReg(alDrop)
-    smReg({type="sep"})
-    smReg({type="button",label="Set Autoload",cb=function()
-        if autoloadName~="" then
-            if not pcall(readfile,"configs/"..autoloadName..".json") then Win:Notify("Not found","Config",2); return end
-            setAutoload(autoloadName); alLabel.label="Active: "..autoloadName
-            Win:Notify("Autoload: "..autoloadName,"Config",3)
-        else Win:Notify("Select a profile","Config",2) end
-    end})
-    smReg({type="button",label="Clear Autoload",color=Color3.fromRGB(160,40,40),cb=function()
-        clearAutoload(); autoloadName=""; alLabel.label="Active: None"
-        Win:Notify("Autoload cleared","Config",3)
-    end})
-
-    -- Final section order: Profiles (col A), Menu+Theme (col B)
-    ST._sections={PS,SM}
-
-    -- Tab order
-    local tabs=Win._tabs; local ordered={}
-    for _,name in ipairs({"Exploits","Teleports","Raid","Settings"}) do
-        for _,tab in ipairs(tabs) do if tab._name==name then ordered[#ordered+1]=tab; break end end
+    local function smReg(w) table.insert(SM._widgets, w) end
+    smReg({ type = "separator" })
+    smReg({ type = "label", label = "Autoload", color = nil })
+    local wAutoloadLabelItem = { type = "label",
+        label = "Active: " .. (autoloadName ~= "" and autoloadName or "None"),
+        color = Color3.fromRGB(110, 110, 130) }
+    smReg(wAutoloadLabelItem)
+    local wAutoloadLabelHandle = { Set = function(_, v) wAutoloadLabelItem.label = v end }
+    local alDropItem = { type = "dropdown", label = "Select Profile",
+        options = listProfiles(), value = autoloadName,
+        maxVisible = 6, scroll = 0,
+        cb = function(sel) autoloadName = sel end,
+        _search = "", _sfocus = false }
+    smReg(alDropItem)
+    smReg({ type = "separator" })
+    smReg({ type = "button", label = "Set as Autoload", cb = function()
+        if autoloadName ~= "" then
+            local ok = pcall(readfile, "configs/" .. autoloadName .. ".json")
+            if not ok then Win:Notify("Not found: " .. autoloadName, "Config", 2); return end
+            setAutoload(autoloadName)
+            wAutoloadLabelHandle:Set("Active: " .. autoloadName)
+            Win:Notify("Autoload set: " .. autoloadName, "Config", 3)
+        else Win:Notify("Select a profile first", "Config", 2) end
+    end })
+    smReg({ type = "button", label = "Clear Autoload",
+        color = Color3.fromRGB(160, 40, 40),
+        cb = function()
+            clearAutoload(); autoloadName = ""
+            wAutoloadLabelHandle:Set("Active: None")
+            Win:Notify("Autoload cleared", "Config", 3)
+        end })
+    smReg({ type = "separator" })
+    smReg({ type = "label", label = "Theme", color = nil })
+    for _, w in ipairs(STH._widgets) do smReg(w) end
+    ST._sections = { PS, SM }
+    -- ── Tab order: Exploits, Teleports, Raid, Settings ──
+    local tabs = Win._tabs
+    local ordered = {}
+    for _, name in ipairs({"Exploits", "Teleports", "Raid", "Settings"}) do
+        for _, tab in ipairs(tabs) do
+            if tab._name == name then table.insert(ordered, tab); break end
+        end
     end
-    if #ordered==4 then
-        for i=1,4 do tabs[i]=ordered[i] end
-        for i=5,#tabs do tabs[i]=nil end
-        Win._openTab=ordered[1]
+    if #ordered == 4 then
+        for i = 1, 4 do tabs[i] = ordered[i] end
+        for i = 5, #tabs do tabs[i] = nil end
+        Win._openTab = ordered[1]
     end
 end)
